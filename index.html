@@ -70,6 +70,15 @@
             margin-bottom: 16px;
         }
 
+        #map {
+            height: 300px;
+            width: 100%;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+            overflow: hidden;
+        }
+
         input:focus {
             outline: none;
             border-color: #667eea;
@@ -263,6 +272,8 @@
 
         <button id="calculateBtn" disabled>Calculate Distance</button>
 
+        <div id="map" aria-hidden="true"></div>
+
         <div id="resultArea" role="region" aria-live="polite" aria-label="Result area">
             <div class="result-title" id="resultTitle">Result</div>
             <div class="result-content" id="resultContent"></div>
@@ -279,12 +290,25 @@
         let destAutocomplete = null;
         let stopsAutocompletes = []; // array of {input, autocomplete}
         let distanceMatrixService = null;
+        let map = null;
+        let directionsService = null;
+        let directionsRenderer = null;
 
         // Initialize Google Maps
         function initMap() {
             try {
                 // Initialize Distance Matrix Service
-                distanceMatrixService = new google.maps. DistanceMatrixService();
+                distanceMatrixService = new google.maps.DistanceMatrixService();
+
+                // Initialize Map and Directions services/renderers
+                map = new google.maps.Map(document.getElementById('map'), {
+                    center: { lat: 39.8283, lng: -98.5795 },
+                    zoom: 4,
+                });
+
+                directionsService = new google.maps.DirectionsService();
+                directionsRenderer = new google.maps.DirectionsRenderer({ suppressMarkers: false });
+                directionsRenderer.setMap(map);
 
                 // Setup Places Autocomplete for source
                 const sourceInput = document. getElementById('sourceInput');
@@ -414,50 +438,77 @@
             btn.textContent = 'Calculating…';
 
             try {
-                // For N waypoints there are N-1 segments. Call Distance Matrix for each segment sequentially and sum results.
-                let totalMeters = 0;
-                let totalSeconds = 0;
+                // Build directions request with stops as waypoints
+                const directionWaypoints = stopsValues.map(s => ({ location: s, stopover: true }));
 
-                for (let i = 0; i < waypoints.length - 1; i++) {
-                    const origin = waypoints[i];
-                    const destination = waypoints[i + 1];
+                const request = {
+                    origin: waypoints[0],
+                    destination: waypoints[waypoints.length - 1],
+                    waypoints: directionWaypoints,
+                    travelMode: google.maps.TravelMode.DRIVING,
+                    optimizeWaypoints: false,
+                };
 
-                    // eslint-disable-next-line no-undef
-                    const resp = await new Promise((resolve, reject) => {
-                        distanceMatrixService.getDistanceMatrix({
-                            origins: [origin],
-                            destinations: [destination],
-                            travelMode: google.maps.TravelMode.DRIVING,
-                            unitSystem: google.maps.UnitSystem.IMPERIAL
-                        }, (response, status) => {
-                            if (status !== google.maps.DistanceMatrixStatus.OK) return reject(status);
-                            resolve(response);
-                        });
-                    });
+                directionsService.route(request, (result, status) => {
+                    // Re-enable button
+                    const btn = document.getElementById('calculateBtn');
+                    btn.disabled = false;
+                    btn.textContent = 'Calculate Distance';
 
-                    const element = resp.rows[0].elements[0];
-                    if (!element || element.status !== google.maps.DistanceMatrixElementStatus.OK) {
-                        showError('No route found for segment: ' + origin + ' → ' + destination);
+                    if (status !== google.maps.DirectionsStatus.OK && status !== 'OK') {
+                        console.error('Directions API error:', status);
+                        showError('Error from Directions API: ' + status);
                         return;
                     }
 
-                    totalMeters += element.distance.value || 0;
-                    totalSeconds += element.duration ? element.duration.value || 0 : 0;
-                }
+                    // Render route on map and show map
+                    directionsRenderer.setDirections(result);
+                    document.getElementById('map').style.display = 'block';
 
-                const totalMiles = totalMeters / 1609.344;
-                let durationText = null;
-                if (totalSeconds > 0) {
-                    // format duration as hours/minutes
-                    const hrs = Math.floor(totalSeconds / 3600);
-                    const mins = Math.round((totalSeconds % 3600) / 60);
-                    durationText = (hrs > 0 ? hrs + ' hr ' : '') + (mins > 0 ? mins + ' min' : '');
-                }
+                    // Extract per-leg distances and durations
+                    const route = result.routes[0];
+                    let totalMeters = 0;
+                    let totalSeconds = 0;
+                    let legsHtml = '<ul style="padding-left:16px;margin:8px 0">';
 
-                showSuccess(totalMiles.toFixed(2), `${(totalMeters/1000).toFixed(2)} km`, durationText);
+                    route.legs.forEach((leg, idx) => {
+                        const from = leg.start_address || `Leg ${idx + 1}`;
+                        const to = leg.end_address || `Leg ${idx + 1}`;
+                        const distText = leg.distance ? leg.distance.text : 'N/A';
+                        const distMeters = leg.distance ? leg.distance.value : 0;
+                        const durText = leg.duration ? leg.duration.text : null;
+
+                        totalMeters += distMeters;
+                        totalSeconds += leg.duration ? leg.duration.value : 0;
+
+                        legsHtml += `<li><strong>${from}</strong> → <strong>${to}</strong>: ${distText}` + (durText ? ` (${durText})` : '') + `</li>`;
+                    });
+                    legsHtml += '</ul>';
+
+                    const totalMiles = (totalMeters / 1609.344).toFixed(2);
+                    let durationSummary = null;
+                    if (totalSeconds > 0) {
+                        const hrs = Math.floor(totalSeconds / 3600);
+                        const mins = Math.round((totalSeconds % 3600) / 60);
+                        durationSummary = (hrs > 0 ? hrs + ' hr ' : '') + (mins > 0 ? mins + ' min' : '');
+                    }
+
+                    const resultArea = document.getElementById('resultArea');
+                    const resultTitle = document.getElementById('resultTitle');
+                    const resultContent = document.getElementById('resultContent');
+
+                    let html = `<div class="distance-value">${totalMiles} <span class="distance-unit">miles</span></div>`;
+                    html += `<div class="distance-text">Total distance: ${(totalMeters/1000).toFixed(2)} km</div>`;
+                    html += legsHtml;
+                    if (durationSummary) html += `<div class="duration"><strong>Driving Time:</strong> ${durationSummary}</div>`;
+
+                    resultTitle.textContent = '✓ Route & Distances';
+                    resultContent.innerHTML = html;
+                    resultArea.className = 'show success';
+                });
             } catch (err) {
-                console.error('Distance Matrix error:', err);
-                showError('Error calculating distance: ' + err);
+                console.error('Directions error:', err);
+                showError('Error calculating route: ' + err);
             }
         }
 
