@@ -1,0 +1,421 @@
+<! DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driving Distance Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background:  linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow:  0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+            text-align:  center;
+        }
+
+        . form-group {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size:  16px;
+            font-family: inherit;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        . ui-autocomplete {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            max-height: 300px;
+            overflow-y:  auto;
+            z-index: 1000;
+        }
+
+        .ui-autocomplete . ui-menu-item {
+            padding: 10px 14px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition:  background-color 0.2s ease;
+        }
+
+        . ui-autocomplete .ui-menu-item:hover,
+        .ui-autocomplete . ui-menu-item.ui-state-active {
+            background-color: #f5f5f5;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition:  transform 0.2s ease, box-shadow 0.2s ease;
+            margin-top: 10px;
+        }
+
+        button:hover: not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow:  0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        button:active: not(:disabled) {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        #resultArea {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 8px;
+            display: none;
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+        }
+
+        #resultArea.show {
+            display: block;
+        }
+
+        #resultArea. error {
+            background: #fee;
+            border-left-color: #e74c3c;
+        }
+
+        #resultArea.error .result-title {
+            color: #e74c3c;
+        }
+
+        #resultArea.success {
+            background: #f0f8f0;
+            border-left-color: #27ae60;
+        }
+
+        #resultArea. success .result-title {
+            color: #27ae60;
+        }
+
+        .result-title {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            transition: color 0.3s ease;
+        }
+
+        .result-content {
+            color: #333;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .distance-value {
+            font-size: 28px;
+            font-weight:  700;
+            color: #667eea;
+            margin-bottom:  8px;
+        }
+
+        .distance-unit {
+            font-size: 14px;
+            color: #999;
+        }
+
+        .distance-text {
+            font-size: 14px;
+            color: #666;
+            margin:  10px 0;
+        }
+
+        .duration {
+            font-size: 14px;
+            color: #666;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f3f3f3;
+            border-top:  2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 24px;
+            }
+
+            h1 {
+                font-size: 22px;
+                margin-bottom: 24px;
+            }
+
+            . distance-value {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 Driving Distance</h1>
+        
+        <div class="form-group">
+            <label for="sourceInput">Source Address</label>
+            <input
+                id="sourceInput"
+                type="text"
+                placeholder="Enter source address..."
+                aria-label="Source address input with autocomplete"
+            >
+        </div>
+
+        <div class="form-group">
+            <label for="destInput">Destination Address</label>
+            <input
+                id="destInput"
+                type="text"
+                placeholder="Enter destination address..."
+                aria-label="Destination address input with autocomplete"
+            >
+        </div>
+
+        <button id="calculateBtn" disabled>Calculate Distance</button>
+
+        <div id="resultArea" role="region" aria-live="polite" aria-label="Result area">
+            <div class="result-title" id="resultTitle">Result</div>
+            <div class="result-content" id="resultContent"></div>
+        </div>
+    </div>
+
+    <!-- Google Maps JavaScript API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY_HERE&libraries=places&callback=initMap" async defer></script>
+
+    <script>
+        // Global state
+        let mapsLoaded = false;
+        let sourceAutocomplete = null;
+        let destAutocomplete = null;
+        let distanceMatrixService = null;
+
+        // Initialize Google Maps
+        function initMap() {
+            try {
+                // Initialize Distance Matrix Service
+                distanceMatrixService = new google.maps. DistanceMatrixService();
+
+                // Setup Places Autocomplete for source
+                const sourceInput = document. getElementById('sourceInput');
+                sourceAutocomplete = new google.maps.places.Autocomplete(sourceInput, {
+                    types:  ['address'],
+                    fields: ['formatted_address']
+                });
+
+                // Setup Places Autocomplete for destination
+                const destInput = document.getElementById('destInput');
+                destAutocomplete = new google.maps.places. Autocomplete(destInput, {
+                    types: ['address'],
+                    fields: ['formatted_address']
+                });
+
+                // Enable calculate button
+                mapsLoaded = true;
+                document.getElementById('calculateBtn').disabled = false;
+
+                // Add Enter key listener to inputs
+                sourceInput.addEventListener('keypress', handleEnterKey);
+                destInput.addEventListener('keypress', handleEnterKey);
+
+                console.log('Google Maps initialized successfully');
+            } catch (error) {
+                console.error('Error initializing Google Maps:', error);
+                showError('Failed to initialize maps. Please refresh the page.');
+            }
+        }
+
+        // Handle Enter key press
+        function handleEnterKey(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                calculateDistance();
+            }
+        }
+
+        // Calculate distance
+        function calculateDistance() {
+            if (!mapsLoaded) {
+                showError('Maps are still loading. Please wait.');
+                return;
+            }
+
+            const sourceInput = document.getElementById('sourceInput').value.trim();
+            const destInput = document.getElementById('destInput').value.trim();
+
+            // Validation
+            if (!sourceInput || ! destInput) {
+                showError('Please enter both source and destination addresses.');
+                return;
+            }
+
+            // Disable button and show calculating state
+            const btn = document.getElementById('calculateBtn');
+            btn.disabled = true;
+            btn.textContent = 'Calculating…';
+
+            // Call Distance Matrix API
+            distanceMatrixService. getDistanceMatrix(
+                {
+                    origins:  [sourceInput],
+                    destinations: [destInput],
+                    travelMode: google.maps. TravelMode.DRIVING,
+                    unitSystem: google. maps.UnitSystem.IMPERIAL
+                },
+                handleDistanceResult
+            );
+        }
+
+        // Handle Distance Matrix result
+        function handleDistanceResult(response, status) {
+            const btn = document.getElementById('calculateBtn');
+            btn.disabled = false;
+            btn.textContent = 'Calculate Distance';
+
+            if (status !== google.maps. DistanceMatrixStatus.OK) {
+                console.error('Distance Matrix API error:', status);
+                showError('Error from Google Maps API:  ' + status);
+                return;
+            }
+
+            const results = response.rows[0]. elements;
+            if (! results || results.length === 0) {
+                showError('No route found. Please check your addresses.');
+                return;
+            }
+
+            const element = results[0];
+
+            // Check element status
+            if (element.status !== google.maps.DistanceMatrixElementStatus.OK) {
+                console.error('Element status:', element. status);
+                showError('No route found between these locations:  ' + element.status);
+                return;
+            }
+
+            // Extract distance and duration
+            const distanceMeters = element.distance.value;
+            const distanceMiles = distanceMeters / 1609.344;
+            const distanceText = element.distance.text;
+            const durationText = element.duration ?  element.duration.text : null;
+
+            showSuccess(distanceMiles.toFixed(2), distanceText, durationText);
+        }
+
+        // Show error message
+        function showError(message) {
+            const resultArea = document.getElementById('resultArea');
+            const resultTitle = document.getElementById('resultTitle');
+            const resultContent = document.getElementById('resultContent');
+
+            resultTitle.textContent = '❌ Error';
+            resultContent.textContent = message;
+
+            resultArea.className = 'show error';
+        }
+
+        // Show success message
+        function showSuccess(miles, distanceText, durationText) {
+            const resultArea = document. getElementById('resultArea');
+            const resultTitle = document.getElementById('resultTitle');
+            const resultContent = document.getElementById('resultContent');
+
+            let html = `<div class="distance-value">${miles} <span class="distance-unit">miles</span></div>`;
+            html += `<div class="distance-text">${distanceText}</div>`;
+            
+            if (durationText) {
+                html += `<div class="duration"><strong>Driving Time:</strong> ${durationText}</div>`;
+            }
+
+            resultTitle.textContent = '✓ Distance Calculated';
+            resultContent.innerHTML = html;
+
+            resultArea.className = 'show success';
+        }
+
+        // Handle Google Maps auth failure
+        window.gm_authFailure = function() {
+            console.error('Google Maps authentication failed');
+            document.getElementById('calculateBtn').disabled = true;
+            showError('Google Maps API key is invalid or unauthorized.  Please check your API key configuration.');
+        };
+
+        // Ensure button is disabled until maps load
+        document.getElementById('calculateBtn').addEventListener('click', calculateDistance);
+    </script>
+</body>
+</html>
