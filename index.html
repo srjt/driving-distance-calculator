@@ -61,6 +61,15 @@
             transition: border-color 0.3s ease, box-shadow 0.3s ease;
         }
 
+        .small-button {
+            width: auto;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            display: inline-block;
+            margin-bottom: 16px;
+        }
+
         input:focus {
             outline: none;
             border-color: #667eea;
@@ -236,6 +245,12 @@
             >
         </div>
 
+        <!-- Add Stop button and dynamic stops container -->
+        <div class="form-group">
+            <button id="addStopBtn" class="small-button" type="button">+ Add stop</button>
+            <div id="stopsContainer" aria-live="polite"></div>
+        </div>
+
         <div class="form-group">
             <label for="destInput">Destination Address</label>
             <input
@@ -262,6 +277,7 @@
         let mapsLoaded = false;
         let sourceAutocomplete = null;
         let destAutocomplete = null;
+        let stopsAutocompletes = []; // array of {input, autocomplete}
         let distanceMatrixService = null;
 
         // Initialize Google Maps
@@ -284,6 +300,7 @@
                     fields: ['formatted_address']
                 });
 
+
                 // Enable calculate button
                 mapsLoaded = true;
                 document.getElementById('calculateBtn').disabled = false;
@@ -292,11 +309,62 @@
                 sourceInput.addEventListener('keypress', handleEnterKey);
                 destInput.addEventListener('keypress', handleEnterKey);
 
+                // Wire Add Stop button
+                document.getElementById('addStopBtn').addEventListener('click', addStopInput);
+
+                // Helper to create autocomplete for a given input
+                function createAutocompleteForInput(el) {
+                    const ac = new google.maps.places.Autocomplete(el, { types: ['address'], fields: ['formatted_address'] });
+                    el.addEventListener('keypress', handleEnterKey);
+                    return ac;
+                }
+
                 console.log('Google Maps initialized successfully');
             } catch (error) {
                 console.error('Error initializing Google Maps:', error);
                 showError('Failed to initialize maps. Please refresh the page.');
             }
+        }
+
+        // Add a new stop input between source and destination
+        function addStopInput() {
+            if (!mapsLoaded) {
+                showError('Maps are still loading. Please wait before adding stops.');
+                return;
+            }
+
+            const container = document.getElementById('stopsContainer');
+
+            const idx = stopsAutocompletes.length + 1;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'form-group';
+            wrapper.style.display = 'flex';
+            wrapper.style.gap = '8px';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.placeholder = `Stop ${idx} address...`;
+            input.setAttribute('aria-label', `Stop ${idx} address input with autocomplete`);
+            input.style.flex = '1';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.textContent = 'Remove';
+            removeBtn.className = 'small-button';
+            removeBtn.addEventListener('click', () => {
+                // remove autocomplete entry and DOM
+                const i = stopsAutocompletes.findIndex(s => s.input === input);
+                if (i >= 0) stopsAutocompletes.splice(i, 1);
+                container.removeChild(wrapper);
+            });
+
+            wrapper.appendChild(input);
+            wrapper.appendChild(removeBtn);
+            container.appendChild(wrapper);
+
+            // Create autocomplete for this input
+            const ac = new google.maps.places.Autocomplete(input, { types: ['address'], fields: ['formatted_address'] });
+            stopsAutocompletes.push({ input, autocomplete: ac });
         }
 
         // Handle Enter key press
@@ -308,7 +376,7 @@
         }
 
         // Calculate distance
-        function calculateDistance() {
+        async function calculateDistance() {
             if (!mapsLoaded) {
                 showError('Maps are still loading. Please wait.');
                 return;
@@ -317,9 +385,26 @@
             const sourceInput = document.getElementById('sourceInput').value.trim();
             const destInput = document.getElementById('destInput').value.trim();
 
+            // gather stops
+            const stopsValues = stopsAutocompletes.map(s => s.input.value.trim()).filter(v => v.length > 0);
+
             // Validation
             if (!sourceInput || ! destInput) {
                 showError('Please enter both source and destination addresses.');
+                return;
+            }
+
+            // If there are stop inputs, ensure none are empty
+            if (stopsAutocompletes.length > 0 && stopsValues.length !== stopsAutocompletes.length) {
+                showError('Please fill or remove empty stop inputs.');
+                return;
+            }
+
+            // Build waypoints sequence
+            const waypoints = [sourceInput, ...stopsValues, destInput];
+
+            if (waypoints.length < 2) {
+                showError('Need at least source and destination.');
                 return;
             }
 
@@ -328,16 +413,52 @@
             btn.disabled = true;
             btn.textContent = 'Calculating…';
 
-            // Call Distance Matrix API
-            distanceMatrixService. getDistanceMatrix(
-                {
-                    origins:  [sourceInput],
-                    destinations: [destInput],
-                    travelMode: google.maps. TravelMode.DRIVING,
-                    unitSystem: google. maps.UnitSystem.IMPERIAL
-                },
-                handleDistanceResult
-            );
+            try {
+                // For N waypoints there are N-1 segments. Call Distance Matrix for each segment sequentially and sum results.
+                let totalMeters = 0;
+                let totalSeconds = 0;
+
+                for (let i = 0; i < waypoints.length - 1; i++) {
+                    const origin = waypoints[i];
+                    const destination = waypoints[i + 1];
+
+                    // eslint-disable-next-line no-undef
+                    const resp = await new Promise((resolve, reject) => {
+                        distanceMatrixService.getDistanceMatrix({
+                            origins: [origin],
+                            destinations: [destination],
+                            travelMode: google.maps.TravelMode.DRIVING,
+                            unitSystem: google.maps.UnitSystem.IMPERIAL
+                        }, (response, status) => {
+                            if (status !== google.maps.DistanceMatrixStatus.OK) return reject(status);
+                            resolve(response);
+                        });
+                    });
+
+                    const element = resp.rows[0].elements[0];
+                    if (!element || element.status !== google.maps.DistanceMatrixElementStatus.OK) {
+                        showError('No route found for segment: ' + origin + ' → ' + destination);
+                        return;
+                    }
+
+                    totalMeters += element.distance.value || 0;
+                    totalSeconds += element.duration ? element.duration.value || 0 : 0;
+                }
+
+                const totalMiles = totalMeters / 1609.344;
+                let durationText = null;
+                if (totalSeconds > 0) {
+                    // format duration as hours/minutes
+                    const hrs = Math.floor(totalSeconds / 3600);
+                    const mins = Math.round((totalSeconds % 3600) / 60);
+                    durationText = (hrs > 0 ? hrs + ' hr ' : '') + (mins > 0 ? mins + ' min' : '');
+                }
+
+                showSuccess(totalMiles.toFixed(2), `${(totalMeters/1000).toFixed(2)} km`, durationText);
+            } catch (err) {
+                console.error('Distance Matrix error:', err);
+                showError('Error calculating distance: ' + err);
+            }
         }
 
         // Handle Distance Matrix result
